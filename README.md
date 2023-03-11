@@ -33,6 +33,7 @@ where `output` is a zxdg_output_v1 name, "all" to affect all outputs, or "select
 | `set-top`           |      |
 | `set-bottom`        |      |
 | `toggle-location`   |      |
+
 For example, `DP-3 status hello world` would set the status text to "hello world" on output DP-3, if it exists. `all set-top` would ensure all bars are drawn at the top of their respective monitors.
 
 Status text may contain in-line color commands in the following format: `^fg/bg(HEXCOLOR)`.
