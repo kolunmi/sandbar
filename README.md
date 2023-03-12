@@ -3,6 +3,7 @@
 
 dwm-like bar for [river](https://github.com/riverwm/river).
 
+![screenshot](/screenshot.png "screenshot")
 </div>
 
 ## Dependencies
