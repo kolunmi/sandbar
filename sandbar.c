@@ -56,15 +56,14 @@
 	"	-active-fg-color [COLOR]		specify text color of active tags or monitors\n" \
 	"	-active-bg-color [COLOR]		specify background color of active tags or monitors\n" \
 	"	-inactive-fg-color [COLOR]		specify text color of inactive tags or monitors\n" \
-	"	-inactive-fg-color [COLOR]		specify background color of inactive tags or monitors\n" \
+	"	-inactive-bg-color [COLOR]		specify background color of inactive tags or monitors\n" \
 	"	-urgent-fg-color [COLOR]		specify text color of urgent tags\n" \
 	"	-urgent-bg-color [COLOR]		specify background color of urgent tags\n" \
 	"Other\n"							\
 	"	-v					get version information\n" \
 	"	-h					view this help text\n"
 
-typedef struct Bar Bar;
-struct Bar {
+typedef struct {
 	struct wl_output *wl_output;
 	struct wl_surface *wl_surface;
 	struct zwlr_layer_surface_v1 *layer_surface;
@@ -87,10 +86,9 @@ struct Bar {
 	bool redraw;
 
 	struct wl_list link;
-};
+} Bar;
 
-typedef struct Seat Seat;
-struct Seat {
+typedef struct {
 	struct wl_seat *wl_seat;
 	struct wl_pointer *wl_pointer;
 	struct zriver_seat_status_v1 *river_seat_status;
@@ -104,7 +102,7 @@ struct Seat {
 	char *mode;
 	
 	struct wl_list link;
-};
+} Seat;
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
