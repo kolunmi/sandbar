@@ -835,6 +835,7 @@ river_seat_status_focused_view(void *data, struct zriver_seat_status_v1 *seat_st
 		free(seat->bar->title);
 	if (!(seat->bar->title = strdup(title)))
 		EDIE("strdup");
+	seat->bar->redraw = true;
 }
 
 static void
