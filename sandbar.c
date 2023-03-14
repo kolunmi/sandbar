@@ -12,7 +12,6 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/select.h>
-#include <utlist.h>
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <wayland-util.h>
@@ -301,12 +300,13 @@ draw_text(char *text,
 			}
 		}
 		
-		if (draw_bg)
+		if (draw_bg) {
 			pixman_image_fill_boxes(PIXMAN_OP_OVER, background,
 						&cur_bg_color, 1, &(pixman_box32_t){
 							.x1 = x, .x2 = nx,
 							.y1 = 0, .y2 = buf_height
 						});
+		}
 		
 		/* increment pen position */
 		x = nx;
@@ -1330,7 +1330,7 @@ main(int argc, char **argv)
 		}
 	}
 	
-	/* Setup bars */
+	/* Setup bars and seats */
 	wl_list_for_each(bar, &bar_list, link)
 		setup_bar(bar);
 	wl_list_for_each(seat, &seat_list, link)
