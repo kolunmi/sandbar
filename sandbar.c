@@ -43,12 +43,9 @@
 	"usage: sandbar [OPTIONS]\n"					\
 	"Bar Config\n"							\
 	"	-hidden					bars will initially be hidden\n" \
-	"	-no-hidden				bars will not initially be hidden\n" \
 	"	-bottom					bars will initially be drawn at the bottom\n" \
-	"	-no-bottom				bars will initially be drawn at the top\n" \
 	"	-hide-vacant-tags			do not display empty and inactive tags\n" \
-	"	-no-hide-vacant-tags			display empty and inactive tags\n" \
-	"	-status-commands			enable in-line commands in status text\n" \
+	"	-no-title				do not display current view title\n" \
 	"	-no-status-commands			disable in-line commands in status text\n" \
 	"	-font [FONT]				specify a font\n" \
 	"	-tags [NUMBER OF TAGS] [FIRST]...[LAST]	specify custom tag names\n" \
@@ -123,7 +120,7 @@ static char *fontstr = "monospace:size=16";
 static struct fcft_font *font;
 static uint32_t height, textpadding, vertical_padding = 1;
 
-static bool hidden, bottom, hide_vacant, status_commands = true;
+static bool hidden, bottom, hide_vacant, no_title, no_status_commands;
 
 static pixman_color_t active_fg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
 static pixman_color_t active_bg_color = { .red = 0x0000, .green = 0x5555, .blue = 0x7777, .alpha = 0xffff, };
@@ -227,7 +224,7 @@ draw_text(char *text,
 	uint32_t codepoint, state = UTF8_ACCEPT, last_cp = 0;
 	for (char *p = text; *p; p++) {
 		/* Check for inline ^ commands */
-		if (status_commands && commands && state == UTF8_ACCEPT && *p == '^') {
+		if (!no_status_commands && commands && state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
 				/* Parse color */
@@ -424,11 +421,13 @@ draw_frame(Bar *bar)
 		  background, &inactive_fg_color, &inactive_bg_color,
 		  bar->width, bar->height, bar->textpadding, true);
 
-	x = draw_text(bar->title, x, y, foreground, background,
-		      bar->sel ? &active_fg_color : &inactive_fg_color,
-		      bar->sel ? &active_bg_color : &inactive_bg_color,
-		      bar->width - status_width, bar->height, bar->textpadding,
-		      false);
+	if (!no_title) {
+		x = draw_text(bar->title, x, y, foreground, background,
+			      bar->sel ? &active_fg_color : &inactive_fg_color,
+			      bar->sel ? &active_bg_color : &inactive_bg_color,
+			      bar->width - status_width, bar->height, bar->textpadding,
+			      false);
+	}
 
 	pixman_image_fill_boxes(PIXMAN_OP_SRC, background,
 				bar->sel ? &active_bg_color : &inactive_bg_color, 1,
@@ -833,7 +832,8 @@ river_seat_status_focused_view(void *data, struct zriver_seat_status_v1 *seat_st
 		free(seat->bar->title);
 	if (!(seat->bar->title = strdup(title)))
 		EDIE("strdup");
-	seat->bar->redraw = true;
+	if (!no_title)
+		seat->bar->redraw = true;
 }
 
 static void
@@ -1219,20 +1219,14 @@ main(int argc, char **argv)
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-hide-vacant-tags")) {
 			hide_vacant = true;
-		} else if (!strcmp(argv[i], "-no-hide-vacant-tags")) {
-			hide_vacant = false;
 		} else if (!strcmp(argv[i], "-bottom")) {
 			bottom = true;
-		} else if (!strcmp(argv[i], "-no-bottom")) {
-			bottom = false;
 		} else if (!strcmp(argv[i], "-hidden")) {
 			hidden = true;
-		} else if (!strcmp(argv[i], "-no-hidden")) {
-			hidden = false;
-		} else if (!strcmp(argv[i], "-status-commands")) {
-			status_commands = true;
+		} else if (!strcmp(argv[i], "-no-title")) {
+			no_title = true;
 		} else if (!strcmp(argv[i], "-no-status-commands")) {
-			status_commands = false;
+			no_status_commands = true;
 		} else if (!strcmp(argv[i], "-font")) {
 			if (++i >= argc)
 				DIE("Option -font requires an argument");
