@@ -824,6 +824,9 @@ static void
 river_seat_status_focused_view(void *data, struct zriver_seat_status_v1 *seat_status,
 			       const char *title)
 {
+	if (no_title)
+		return;
+	
 	Seat *seat = (Seat *)data;
 
 	if (!seat->bar)
@@ -832,8 +835,6 @@ river_seat_status_focused_view(void *data, struct zriver_seat_status_v1 *seat_st
 		free(seat->bar->title);
 	if (!(seat->bar->title = strdup(title)))
 		EDIE("strdup");
-	if (!no_title)
-		seat->bar->redraw = true;
 }
 
 static void
