@@ -16,6 +16,10 @@
 #include <wayland-cursor.h>
 #include <wayland-util.h>
 
+#ifdef __unix__
+#include <unistd.h>
+#endif
+
 #include "utf8.h"
 #include "xdg-shell-protocol.h"
 #include "xdg-output-unstable-v1-protocol.h"
