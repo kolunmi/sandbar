@@ -53,12 +53,14 @@
 	"	-font [FONT]				specify a font\n" \
 	"	-tags [NUMBER OF TAGS] [FIRST]...[LAST]	specify custom tag names\n" \
 	"	-vertical-padding [PIXELS]		specify vertical pixel padding above and below text\n" \
-	"	-active-fg-color [COLOR]		specify text color of active tags or monitors\n" \
-	"	-active-bg-color [COLOR]		specify background color of active tags or monitors\n" \
-	"	-inactive-fg-color [COLOR]		specify text color of inactive tags or monitors\n" \
-	"	-inactive-bg-color [COLOR]		specify background color of inactive tags or monitors\n" \
-	"	-urgent-fg-color [COLOR]		specify text color of urgent tags\n" \
-	"	-urgent-bg-color [COLOR]		specify background color of urgent tags\n" \
+	"	-active-fg-color [RGBA]			specify text color of active tags or monitors\n" \
+	"	-active-bg-color [RGBA]			specify background color of active tags or monitors\n" \
+	"	-inactive-fg-color [RGBA]		specify text color of inactive tags or monitors\n" \
+	"	-inactive-bg-color [RGBA]		specify background color of inactive tags or monitors\n" \
+	"	-urgent-fg-color [RGBA]			specify text color of urgent tags\n" \
+	"	-urgent-bg-color [RGBA]			specify background color of urgent tags\n" \
+	"	-title-fg-color [RGBA]			specify text color of title bar\n" \
+	"	-title-bg-color [RGBA]			specify background color of title bar\n" \
 	"Other\n"							\
 	"	-v					get version information\n" \
 	"	-h					view this help text\n"
@@ -131,6 +133,8 @@ static pixman_color_t inactive_fg_color = { .red = 0xbbbb, .green = 0xbbbb, .blu
 static pixman_color_t inactive_bg_color = { .red = 0x2222, .green = 0x2222, .blue = 0x2222, .alpha = 0xffff, };
 static pixman_color_t urgent_fg_color = { .red = 0x2222, .green = 0x2222, .blue = 0x2222, .alpha = 0xffff, };
 static pixman_color_t urgent_bg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
+static pixman_color_t title_fg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
+static pixman_color_t title_bg_color = { .red = 0x0000, .green = 0x5555, .blue = 0x7777, .alpha = 0xffff, };
 
 static bool run_display;
 
@@ -427,14 +431,14 @@ draw_frame(Bar *bar)
 
 	if (!no_title) {
 		x = draw_text(bar->title, x, y, foreground, background,
-			      bar->sel ? &active_fg_color : &inactive_fg_color,
-			      bar->sel ? &active_bg_color : &inactive_bg_color,
+			      bar->sel ? &title_fg_color : &inactive_fg_color,
+			      bar->sel ? &title_bg_color : &inactive_bg_color,
 			      bar->width - status_width, bar->height, bar->textpadding,
 			      false);
 	}
 
 	pixman_image_fill_boxes(PIXMAN_OP_SRC, background,
-				bar->sel ? &active_bg_color : &inactive_bg_color, 1,
+				bar->sel ? &title_bg_color : &title_bg_color, 1,
 				&(pixman_box32_t){
 					.x1 = x, .x2 = bar->width - status_width,
 					.y1 = 0, .y2 = bar->height
@@ -1270,6 +1274,16 @@ main(int argc, char **argv)
 			if (++i >= argc)
 				DIE("Option -urgent-bg-color requires an argument");
 			if (parse_color(argv[i], &urgent_bg_color) == -1)
+				DIE("malformed color string");
+		} else if (!strcmp(argv[i], "-title-fg-color")) {
+			if (++i >= argc)
+				DIE("Option -title-fg-color requires an argument");
+			if (parse_color(argv[i], &title_fg_color) == -1)
+				DIE("malformed color string");
+		} else if (!strcmp(argv[i], "-title-bg-color")) {
+			if (++i >= argc)
+				DIE("Option -title-bg-color requires an argument");
+			if (parse_color(argv[i], &title_bg_color) == -1)
 				DIE("malformed color string");
 		} else if (!strcmp(argv[i], "-tags")) {
 			if (++i + 1 >= argc)
