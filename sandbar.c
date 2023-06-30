@@ -53,6 +53,7 @@
 	"	-font [FONT]				specify a font\n" \
 	"	-tags [NUMBER OF TAGS] [FIRST]...[LAST]	specify custom tag names\n" \
 	"	-vertical-padding [PIXELS]		specify vertical pixel padding above and below text\n" \
+	"	-scale [BUFFER_SCALE]			specify buffer scale value for integer scaling\n" \
 	"	-active-fg-color [RGBA]			specify text color of active tags or monitors\n" \
 	"	-active-bg-color [RGBA]			specify background color of active tags or monitors\n" \
 	"	-inactive-fg-color [RGBA]		specify text color of inactive tags or monitors\n" \
@@ -123,7 +124,7 @@ static uint32_t tags_l;
 
 static char *fontstr = "monospace:size=16";
 static struct fcft_font *font;
-static uint32_t height, textpadding, vertical_padding = 1;
+static uint32_t height, textpadding, vertical_padding = 1, buffer_scale = 1;
 
 static bool hidden, bottom, hide_vacant, no_title, no_status_commands;
 
@@ -454,6 +455,7 @@ draw_frame(Bar *bar)
 	
 	munmap(data, bar->bufsize);
 
+	wl_surface_set_buffer_scale(bar->wl_surface, buffer_scale);
 	wl_surface_attach(bar->wl_surface, buffer, 0, 0);
 	wl_surface_damage_buffer(bar->wl_surface, 0, 0, bar->width, bar->height);
 	wl_surface_commit(bar->wl_surface);
@@ -470,6 +472,9 @@ layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface,
 	
 	Bar *bar = (Bar *)data;
 	
+	w *= buffer_scale;
+	h *= buffer_scale;
+
 	if (bar->configured && w == bar->width && h == bar->height)
 		return;
 	
@@ -545,9 +550,10 @@ pointer_enter(void *data, struct wl_pointer *pointer,
 	seat->hovering = true;
 	
 	if (!cursor_image) {
-		struct wl_cursor_theme *cursor_theme = wl_cursor_theme_load(NULL, 24, shm);
+		struct wl_cursor_theme *cursor_theme = wl_cursor_theme_load(NULL, 24 * buffer_scale, shm);
 		cursor_image = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr")->images[0];
 		cursor_surface = wl_compositor_create_surface(compositor);
+		wl_surface_set_buffer_scale(cursor_surface, buffer_scale);
 		wl_surface_attach(cursor_surface, wl_cursor_image_get_buffer(cursor_image), 0, 0);
 		wl_surface_commit(cursor_surface);
 	}
@@ -604,7 +610,7 @@ pointer_frame(void *data, struct wl_pointer *pointer)
 			if (!active && !occupied && !urgent)
 				continue;
 		}
-		x += TEXT_WIDTH(tags[i], seat->bar->width - x, seat->bar->textpadding, false);
+		x += TEXT_WIDTH(tags[i], seat->bar->width - x, seat->bar->textpadding, false) / buffer_scale;
 	} while (seat->pointer_x >= x && ++i < tags_l);
 	if (i < tags_l) {
 		/* Clicked on tags */
@@ -628,7 +634,7 @@ pointer_frame(void *data, struct wl_pointer *pointer)
 	
 	Seat *it;
 	wl_list_for_each(it, &seat_list, link) {
-		x += TEXT_WIDTH(it->mode, seat->bar->width - x, seat->bar->textpadding, false);
+		x += TEXT_WIDTH(it->mode, seat->bar->width - x, seat->bar->textpadding, false) / buffer_scale;
 		if (seat->pointer_x < x) {
 			/* clicked on mode */
 			char *mode;
@@ -647,14 +653,14 @@ pointer_frame(void *data, struct wl_pointer *pointer)
 
 	// TODO: run custom commands upon clicking layout, title, status
 	if (seat->bar->mtags & seat->bar->ctags) {
-		x += TEXT_WIDTH(seat->bar->layout, seat->bar->width - x, seat->bar->textpadding, false);
+		x += TEXT_WIDTH(seat->bar->layout, seat->bar->width - x, seat->bar->textpadding, false) / buffer_scale;
 		if (seat->pointer_x < x) {
 			/* clicked on layout */
 			return;
 		}
 	}
 	
-	if (seat->pointer_x < seat->bar->width - TEXT_WIDTH(seat->bar->status, seat->bar->width - x, seat->bar->textpadding, true)) {
+	if (seat->pointer_x < seat->bar->width / buffer_scale - TEXT_WIDTH(seat->bar->status, seat->bar->width - x, seat->bar->textpadding, true) / buffer_scale) {
 		/* clicked on title */
 		return;
 	}
@@ -882,12 +888,12 @@ show_bar(Bar *bar)
 		DIE("Could not create layer_surface");
 	zwlr_layer_surface_v1_add_listener(bar->layer_surface, &layer_surface_listener, bar);
 
-	zwlr_layer_surface_v1_set_size(bar->layer_surface, 0, bar->height);
+	zwlr_layer_surface_v1_set_size(bar->layer_surface, 0, bar->height / buffer_scale);
 	zwlr_layer_surface_v1_set_anchor(bar->layer_surface,
 					 (bar->bottom ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM : ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP)
 					 | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT
 					 | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-	zwlr_layer_surface_v1_set_exclusive_zone(bar->layer_surface, bar->height);
+	zwlr_layer_surface_v1_set_exclusive_zone(bar->layer_surface, bar->height / buffer_scale);
 	wl_surface_commit(bar->wl_surface);
 
 	bar->hidden = false;
@@ -906,7 +912,7 @@ hide_bar(Bar *bar)
 static void
 setup_bar(Bar *bar)
 {
-	bar->height = height;
+	bar->height = height * buffer_scale;
 	bar->textpadding = textpadding;
 	bar->bottom = bottom;
 	bar->hidden = hidden;
@@ -1245,6 +1251,10 @@ main(int argc, char **argv)
 			if (++i >= argc)
 				DIE("Option -vertical-padding requires an argument");
 			vertical_padding = MAX(MIN(atoi(argv[i]), 100), 0);
+		} else if (!strcmp(argv[i], "-scale")) {
+			if (++i >= argc)
+				DIE("Option -scale requires an argument");
+			buffer_scale = strtoul(argv[i], &argv[i] + strlen(argv[i]), 10);
 		} else if (!strcmp(argv[i], "-active-fg-color")) {
 			if (++i >= argc)
 				DIE("Option -active-fg-color requires an argument");
@@ -1330,10 +1340,14 @@ main(int argc, char **argv)
 	/* Load selected font */
 	fcft_init(FCFT_LOG_COLORIZE_AUTO, 0, FCFT_LOG_CLASS_ERROR);
 	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
-	if (!(font = fcft_from_name(1, (const char *[]) {fontstr}, NULL)))
+
+	unsigned int dpi = 96 * buffer_scale;
+	char buf[10];
+	snprintf(buf, sizeof buf, "dpi=%u", dpi);
+	if (!(font = fcft_from_name(1, (const char *[]) {fontstr}, buf)))
 		DIE("Could not load font");
 	textpadding = font->height / 2;
-	height = font->height + vertical_padding * 2;
+	height = font->height / buffer_scale + vertical_padding * 2;
 
 	/* Configure tag names */
 	if (!tags) {
