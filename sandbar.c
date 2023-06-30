@@ -22,7 +22,6 @@
 
 #include "utf8.h"
 #include "xdg-shell-protocol.h"
-#include "xdg-output-unstable-v1-protocol.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "river-status-unstable-v1-protocol.h"
 #include "river-control-unstable-v1-protocol.h"
@@ -70,11 +69,10 @@ typedef struct {
 	struct wl_output *wl_output;
 	struct wl_surface *wl_surface;
 	struct zwlr_layer_surface_v1 *layer_surface;
-	struct zxdg_output_v1 *xdg_output;
 	struct zriver_output_status_v1 *river_output_status;
 	
 	uint32_t registry_name;
-	char *xdg_output_name;
+	char *output_name;
 
 	bool configured;
 	uint32_t width, height;
@@ -111,7 +109,6 @@ static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct zwlr_layer_shell_v1 *layer_shell;
-static struct zxdg_output_manager_v1 *output_manager;
 static struct zriver_status_manager_v1 *river_status_manager;
 static struct zriver_control_v1 *river_control;
 static struct wl_cursor_image *cursor_image;
@@ -499,48 +496,6 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 };
 
 static void
-output_name(void *data, struct zxdg_output_v1 *output, const char *name)
-{
-	Bar *bar = (Bar *)data;
-	
-	if (bar->xdg_output_name)
-		free(bar->xdg_output_name);
-	if (!(bar->xdg_output_name = strdup(name)))
-		EDIE("strdup");
-}
-
-static void
-output_description(void *data, struct zxdg_output_v1 *output,
-		   const char *description)
-{
-}
-
-static void
-output_logical_position(void *data, struct zxdg_output_v1 *output,
-			int32_t x, int32_t y)
-{
-}
-
-static void
-output_logical_size(void *data, struct zxdg_output_v1 *output,
-		    int32_t width, int32_t height)
-{
-}
-
-static void
-output_done(void *data, struct zxdg_output_v1 *output)
-{
-}
-
-static const struct zxdg_output_v1_listener output_listener = {
-	.name = output_name,
-	.description = output_description,
-	.logical_position = output_logical_position,
-	.logical_size = output_logical_size,
-	.done = output_done
-};
-
-static void
 pointer_enter(void *data, struct wl_pointer *pointer,
 	      uint32_t serial, struct wl_surface *surface,
 	      wl_fixed_t surface_x, wl_fixed_t surface_y)
@@ -709,6 +664,59 @@ static const struct wl_pointer_listener pointer_listener = {
 	.frame = pointer_frame,
 	.leave = pointer_leave,
 	.motion = pointer_motion,
+};
+
+static void
+output_description(void *data, struct wl_output *wl_output,
+	const char *description)
+{
+}
+
+static void
+output_done(void *data, struct wl_output *wl_output)
+{
+}
+
+static void
+output_geometry(void *data, struct wl_output *wl_output,
+	int32_t x, int32_t y, int32_t physical_width, int32_t physical_height,
+	int32_t subpixel, const char *make, const char *model,
+	int32_t transform)
+{
+}
+
+static void
+output_mode(void *data, struct wl_output *wl_output,
+	uint32_t flags, int32_t width, int32_t height,
+	int32_t refresh)
+{
+}
+
+static void
+output_name(void *data, struct wl_output *wl_output,
+	const char *name)
+{
+	Bar *bar = (Bar *)data;
+
+	if (bar->output_name)
+		free(bar->output_name);
+	if (!(bar->output_name = strdup(name)))
+		EDIE("strdup");
+}
+
+static void
+output_scale(void *data, struct wl_output *wl_output,
+	int32_t factor)
+{
+}
+
+static const struct wl_output_listener output_listener = {
+	.description = output_description,
+	.done = output_done,
+	.geometry = output_geometry,
+	.mode = output_mode,
+	.name = output_name,
+	.scale = output_scale,
 };
 
 static void
@@ -917,10 +925,6 @@ setup_bar(Bar *bar)
 	bar->bottom = bottom;
 	bar->hidden = hidden;
 
-	if (!(bar->xdg_output = zxdg_output_manager_v1_get_xdg_output(output_manager, bar->wl_output)))
-		DIE("Could not create xdg_output");
-	zxdg_output_v1_add_listener(bar->xdg_output, &output_listener, bar);
-	
 	if (!(bar->river_output_status = zriver_status_manager_v1_get_river_output_status(river_status_manager, bar->wl_output)))
 		DIE("Could not create river_output_status");
 	zriver_output_status_v1_add_listener(bar->river_output_status, &river_output_status_listener, bar);
@@ -947,8 +951,6 @@ handle_global(void *data, struct wl_registry *registry,
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name)) {
 		layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1);
-	} else if (!strcmp(interface, zxdg_output_manager_v1_interface.name)) {
-		output_manager = wl_registry_bind(registry, name, &zxdg_output_manager_v1_interface, 2);
 	} else if (!strcmp(interface, zriver_status_manager_v1_interface.name)) {
 		river_status_manager = wl_registry_bind(registry, name, &zriver_status_manager_v1_interface, 4);
 	} else if (!strcmp(interface, zriver_control_v1_interface.name)) {
@@ -958,7 +960,8 @@ handle_global(void *data, struct wl_registry *registry,
 		if (!bar)
 			EDIE("calloc");
 		bar->registry_name = name;
-		bar->wl_output = wl_registry_bind(registry, name, &wl_output_interface, 1);
+		bar->wl_output = wl_registry_bind(registry, name, &wl_output_interface, 4);
+		wl_output_add_listener(bar->wl_output, &output_listener, bar);
 		if (run_display)
 			setup_bar(bar);
 		wl_list_insert(&bar_list, &bar->link);
@@ -984,14 +987,13 @@ teardown_bar(Bar *bar)
 		free(bar->layout);
 	if (bar->status)
 		free(bar->status);
-	if (bar->xdg_output_name)
-		free(bar->xdg_output_name);
+	if (bar->output_name)
+		free(bar->output_name);
 	zriver_output_status_v1_destroy(bar->river_output_status);
 	if (!bar->hidden) {
 		zwlr_layer_surface_v1_destroy(bar->layer_surface);
 		wl_surface_destroy(bar->wl_surface);
 	}
-	zxdg_output_v1_destroy(bar->xdg_output);
 	wl_output_destroy(bar->wl_output);
 	free(bar);
 }
@@ -1169,7 +1171,7 @@ read_stdin(void)
 					func(bar, wordend);
 		} else {
 			wl_list_for_each(bar, &bar_list, link) {
-				if (bar->xdg_output_name && !strcmp(output, bar->xdg_output_name)) {
+				if (bar->output_name && !strcmp(output, bar->output_name)) {
 					func(bar, wordend);
 					break;
 				}
@@ -1334,7 +1336,7 @@ main(int argc, char **argv)
 	struct wl_registry *registry = wl_display_get_registry(display);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(display);
-	if (!compositor || !shm || !layer_shell || !output_manager || !river_status_manager || !river_control)
+	if (!compositor || !shm || !layer_shell || !river_status_manager || !river_control)
 		DIE("Compositor does not support all needed protocols");
 
 	/* Load selected font */

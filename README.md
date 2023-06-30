@@ -24,7 +24,7 @@ Commands are read through stdin in the following format:
 ```
 output command data
 ```
-where `output` is a zxdg_output_v1 name, "all" to affect all outputs, or "selected" for focused outputs, and `command` and `data` are any one of the following:
+where `output` is a wl_output name, "all" to affect all outputs, or "selected" for focused outputs, and `command` and `data` are any one of the following:
 | Command             | Data |
 |---------------------|------|
 | `status`            | text |

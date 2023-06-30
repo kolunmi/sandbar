@@ -6,7 +6,5 @@ river-status-unstable-v1-protocol.c
 river-status-unstable-v1-protocol.h
 wlr-layer-shell-unstable-v1-protocol.c
 wlr-layer-shell-unstable-v1-protocol.h
-xdg-output-unstable-v1-protocol.c
-xdg-output-unstable-v1-protocol.h
 xdg-shell-protocol.c
 xdg-shell-protocol.h
