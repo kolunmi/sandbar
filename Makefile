@@ -9,7 +9,7 @@ clean:
 	$(RM) $(BINS) $(addsuffix .o,$(BINS))
 
 install: all
-	install -D -t $(PREFIX)/bin $(BINS)
+	install -D -t $(DESTDIR)$(PREFIX)/bin $(BINS)
 
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
