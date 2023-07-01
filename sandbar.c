@@ -40,7 +40,7 @@
 	((a) > (b) ? (a) : (b))
 
 #define PROGRAM "sandbar"
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define USAGE								\
 	"usage: sandbar [OPTIONS]\n"					\
 	"Bar Config\n"							\
