@@ -13,10 +13,22 @@ dwm-like bar for [river](https://github.com/riverwm/river).
 * fcft
 
 ## Installation
+
+
+### From Source
+
 ```bash
 git clone https://github.com/kolunmi/sandbar
 cd sandbar
 make install
+```
+
+### Arch Linux
+
+The package is available on the AUR as [sandbar-git](https://aur.archlinux.org/packages/sandbar-git). Manually install it with `makepkg -sirc` or use your favorite AUR helper:
+
+``` bas
+paru -S sandbar-git
 ```
 
 ## Commands
