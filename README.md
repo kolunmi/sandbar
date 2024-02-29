@@ -66,15 +66,15 @@ FIFO="$XDG_RUNTIME_DIR/sandbar"
 mkfifo "$FIFO"
 
 while cat "$FIFO"; do :; done | sandbar \
-  -font "Iosevka Nerd Font:Pixelsize" \
-  -active-fg-color "#000000" \
-  -active-bg-color "#98971a" \
-  -inactive-fg-color "#ebdbb2" \
-  -inactive-bg-color "#000000" \
-  -urgent-fg-color "#000000" \
-  -urgent-bg-color "#cc241d" \
-  -title-fg-color "#000000" \
-  -title-bg-color "#98971a"
+	-font "Iosevka Nerd Font:Pixelsize" \
+	-active-fg-color "#000000" \
+	-active-bg-color "#98971a" \
+	-inactive-fg-color "#ebdbb2" \
+	-inactive-bg-color "#000000" \
+	-urgent-fg-color "#000000" \
+	-urgent-bg-color "#cc241d" \
+	-title-fg-color "#000000" \
+	-title-bg-color "#98971a"
 ```
 
 Then, create the file `$HOME/.config/river/status`:
@@ -105,7 +105,7 @@ bat() {
 }
 
 vol() {
-  vol="$([ "$(pamixer --get-mute)" = "false" ] && printf "%s%%" "$(pamixer --get-volume)" || printf '-')"
+	vol="$([ "$(pamixer --get-mute)" = "false" ] && printf "%s%%" "$(pamixer --get-volume)" || printf '-')"
 }
 
 display() {
@@ -124,7 +124,7 @@ while true; do
 		[ $((sec % 15)) -eq 0 ] && cpu
 		[ $((sec % 15)) -eq 0 ] && disk
 		[ $((sec % 60)) -eq 0 ] && bat
-    [ $((sec % 5)) -eq 0 ] && vol
+		[ $((sec % 5)) -eq 0 ] && vol
 		[ $((sec % 5)) -eq 0 ] && datetime
 
 		[ $((sec % 5)) -eq 0 ] && display
