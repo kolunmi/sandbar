@@ -30,6 +30,14 @@ The package is available on the AUR as [sandbar-git](https://aur.archlinux.org/p
 ``` bas
 paru -S sandbar-git
 ```
+### NixOS
+
+The package is available on the nixpkgs unstable channel as **sandbar**. Install it via home-manager, configuration.nix or install it via nix-env:
+
+``` nix
+nix-env -iA nixos.sandbar #if your main channel is nixos
+```
+
 
 ## Commands
 Commands are read through stdin in the following format:
