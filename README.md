@@ -32,7 +32,7 @@ paru -S sandbar-git
 ```
 ### NixOS
 
-The package is available on the nixpkgs unstable channel as **sandbar**. Install it via home-manager, configuration.nix or install it via nix-env:
+The package is available on NixOS as **sandbar**. Install it via home-manager, configuration.nix or install it via nix-env:
 
 ``` nix
 nix-env -iA nixos.sandbar #if your main channel is nixos
