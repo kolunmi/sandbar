@@ -49,6 +49,7 @@
 	"	-hide-vacant-tags			do not display empty and inactive tags\n" \
 	"	-no-title				do not display current view title\n" \
 	"	-no-status-commands			disable in-line commands in status text\n" \
+	"	-no-layout				do not display the current layout\n" \
 	"	-no-mode				do not display the current mode\n" \
 	"	-font [FONT]				specify a font\n" \
 	"	-tags [NUMBER OF TAGS] [FIRST]...[LAST]	specify custom tag names\n" \
@@ -124,7 +125,7 @@ static char *fontstr = "monospace:size=16";
 static struct fcft_font *font;
 static uint32_t height, textpadding, vertical_padding = 1, buffer_scale = 1;
 
-static bool hidden, bottom, hide_vacant, no_title, no_status_commands, no_mode;
+static bool hidden, bottom, hide_vacant, no_title, no_status_commands, no_mode, no_layout;
 
 static pixman_color_t active_fg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
 static pixman_color_t active_bg_color = { .red = 0x0000, .green = 0x5555, .blue = 0x7777, .alpha = 0xffff, };
@@ -419,10 +420,12 @@ draw_frame(Bar *bar)
 		}
 	}
 
-	if (bar->mtags & bar->ctags) {
-		x = draw_text(bar->layout, x, y, foreground, background,
-			      &inactive_fg_color, &inactive_bg_color, bar->width,
-			      bar->height, bar->textpadding, false);
+	if (!no_layout) {
+		if (bar->mtags & bar->ctags) {
+			x = draw_text(bar->layout, x, y, foreground, background,
+					  &inactive_fg_color, &inactive_bg_color, bar->width,
+					  bar->height, bar->textpadding, false);
+		}
 	}
 	
 	uint32_t status_width = TEXT_WIDTH(bar->status, bar->width - x, bar->textpadding, true);
@@ -1250,6 +1253,8 @@ main(int argc, char **argv)
 			no_status_commands = true;
 		} else if (!strcmp(argv[i], "-no-mode")) {
 			no_mode = true;
+		} else if (!strcmp(argv[i], "-no-layout")) {
+			no_layout = true;
 		} else if (!strcmp(argv[i], "-font")) {
 			if (++i >= argc)
 				DIE("Option -font requires an argument");
