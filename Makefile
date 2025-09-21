@@ -3,13 +3,15 @@ BINS = sandbar
 PREFIX ?= /usr/local
 CFLAGS += -Wall -Wextra -Wno-unused-parameter -g
 
-all: $(BINS)
+all: $(BINS) systray
 
 clean:
 	$(RM) $(BINS) $(addsuffix .o,$(BINS))
+	$(MAKE) clean -C systray
 
 install: all
 	install -D -t $(DESTDIR)$(PREFIX)/bin $(BINS)
+	$(MAKE) install -C systray
 
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
@@ -47,4 +49,7 @@ sandbar: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o river-statu
 sandbar: CFLAGS+=$(shell pkg-config --cflags wayland-client wayland-cursor fcft pixman-1)
 sandbar: LDLIBS+=$(shell pkg-config --libs wayland-client wayland-cursor fcft pixman-1) -lrt
 
-.PHONY: all clean install
+systray:
+	$(MAKE) -C systray
+
+.PHONY: all systray clean install

@@ -1,0 +1,6 @@
+*.o
+sandbartray
+valgrind*
+pango.supp
+.cache
+compile_commands.json

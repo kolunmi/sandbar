@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdint.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcft/fcft.h>
@@ -15,7 +16,8 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <wayland-util.h>
-
+#include <libgen.h>
+#include <linux/limits.h>
 #ifdef __unix__
 #include <unistd.h>
 #endif
@@ -64,6 +66,7 @@
 	"	-urgent-bg-color [RGBA]			specify background color of urgent tags\n" \
 	"	-title-fg-color [RGBA]			specify text color of title bar\n" \
 	"	-title-bg-color [RGBA]			specify background color of title bar\n" \
+    "   -no-systray                     do not launch systray program\n" \
 	"Other\n"							\
 	"	-v					get version information\n" \
 	"	-h					view this help text\n"
@@ -79,6 +82,7 @@ typedef struct {
 
 	bool configured;
 	uint32_t width, height;
+    uint32_t width_orig;
 	uint32_t textpadding;
 	uint32_t stride, bufsize;
 	
@@ -138,6 +142,8 @@ static pixman_color_t title_fg_color = { .red = 0xeeee, .green = 0xeeee, .blue =
 static pixman_color_t title_bg_color = { .red = 0x0000, .green = 0x5555, .blue = 0x7777, .alpha = 0xffff, };
 
 static bool run_display;
+
+static int tray_fd = -1;
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
@@ -481,9 +487,10 @@ layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface,
 	w *= buffer_scale;
 	h *= buffer_scale;
 
-	if (bar->configured && w == bar->width && h == bar->height)
+	if (bar->configured && w == bar->width_orig && h == bar->height)
 		return;
 	
+	bar->width_orig = w;
 	bar->width = w;
 	bar->height = h;
 	bar->stride = bar->width * 4;
@@ -1120,6 +1127,18 @@ toggle_location(Bar *bar, char *data)
 		set_bottom(bar, NULL);
 }
 
+static void request_resize(Bar *bar, char *data) {
+    if (!bar)
+        return;
+
+    uint32_t traywidth = (uint32_t)atoi(data);
+
+    bar->width = bar->width_orig - traywidth * buffer_scale;
+    bar->stride = bar->width * 4;
+    bar->bufsize = bar->stride * bar->height;
+    bar->redraw = true;
+}
+
 static int
 advance_word(char **beg, char **end)
 {
@@ -1134,10 +1153,10 @@ advance_word(char **beg, char **end)
 }
 
 static int
-read_stdin(void)
+read_fd(int fd)
 {
 	char buf[8192];
-	ssize_t len = read(STDIN_FILENO, buf, sizeof(buf));
+	ssize_t len = read(fd, buf, sizeof(buf));
 	if (len == -1)
 		EDIE("read");
 	if (len == 0)
@@ -1160,6 +1179,10 @@ read_stdin(void)
 			if (!*wordend)
 				continue;
 			func = set_status;
+        } else if (!strcmp(wordbeg, "resize")) {
+			if (!*wordend)
+				continue;
+			func = request_resize;
 		} else if (!strcmp(wordbeg, "show")) {
 			func = set_visible;
 		} else if (!strcmp(wordbeg, "hide")) {
@@ -1197,6 +1220,111 @@ read_stdin(void)
 	return 0;
 }
 
+#define MAX_ARGS 16
+#define MAX_ARG_LEN 16
+
+static void
+construct_tray_path(char *path_buf, const char *parent_progname, size_t size)
+{
+	const char tray_bin_name[] = "sandbartray";
+	char progname_buf[PATH_MAX];
+	char traypath_maybe[PATH_MAX];
+
+	snprintf(progname_buf, sizeof(progname_buf), "%s", parent_progname);
+
+	char *dirpath = dirname(progname_buf);
+	if (dirpath) {
+		snprintf(traypath_maybe,
+		         sizeof(traypath_maybe),
+		         "%s/systray/%s",
+		         dirpath,
+		         tray_bin_name);
+	} else {
+		traypath_maybe[0] = '\0';
+	}
+
+	if (access(traypath_maybe, X_OK) == 0)
+		snprintf(path_buf, size, "%s", traypath_maybe);
+	else
+		snprintf(path_buf, size, "%s", tray_bin_name);
+}
+
+static void
+construct_traybg_arg(char *traybg_arg, size_t size)
+{
+	pixman_color_t *traybg_clr = &inactive_bg_color;
+	snprintf(traybg_arg,
+	         size,
+	         "#%02x%02x%02x",
+	         (traybg_clr->red / 0x101),
+	         (traybg_clr->green / 0x101),
+	         (traybg_clr->blue) / 0x101);
+}
+
+static void
+construct_trayheight_arg(char *height_arg, size_t size)
+{
+	snprintf(height_arg, size, "%u", height);
+}
+
+static int
+start_systray(const char *parent_progname, bool bottom)
+{
+	char *args[MAX_ARGS];
+
+	char argv0[PATH_MAX];
+	char traybg_opt[]                 = "-c";
+	char trayheight_opt[]             = "-s";
+	char bottom_opt[]                 = "-b";
+	char traybg_arg[MAX_ARG_LEN];
+	char trayheight_arg[MAX_ARG_LEN];
+
+	construct_tray_path(argv0, parent_progname, sizeof(argv0));
+	construct_traybg_arg(traybg_arg, sizeof(traybg_arg));
+	construct_trayheight_arg(trayheight_arg, sizeof(trayheight_arg));
+
+	int curarg = 0;
+	args[curarg++] = argv0;
+	args[curarg++] = traybg_opt;
+	args[curarg++] = traybg_arg;
+	args[curarg++] = trayheight_opt;
+	args[curarg++] = trayheight_arg;
+	if (bottom)
+		args[curarg++] = bottom_opt;
+	args[curarg] = NULL;
+
+	// Example result:
+	// char *args[16] = { "/home/user/git/dwlb/systray/dwlbtray", "-c", "#FFFFFF", "-s", "99", "-b", "-t", "DP-1", NULL, *garbage*, ... };
+
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        DIE("PIPE");
+    }
+
+	int child_pid = fork();
+	if (child_pid == -1) {
+        close(pipefd[0]);
+		close(pipefd[1]);
+		DIE("Fork failed");
+	}
+
+    if (child_pid == 0) {
+        close(pipefd[0]);  // child doesn't read
+        if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
+			perror("dup2 in child");
+			exit(EXIT_FAILURE); // In child, just exit, don't DIE for the parent
+		}
+        close(pipefd[1]);
+
+		if (execvp(args[0], args) == -1) {
+			DIE("Could not start systray program");
+		};
+	} else {
+        close(pipefd[1]); //parent doesn't write
+        return pipefd[0];
+    }
+}
+
 static void
 event_loop(void)
 {
@@ -1204,13 +1332,24 @@ event_loop(void)
 
 	while (run_display) {
 		fd_set rfds;
+        int max_fd = 0;
+
 		FD_ZERO(&rfds);
+
 		FD_SET(wl_fd, &rfds);
+        if (wl_fd > max_fd) max_fd = wl_fd;
+
 		FD_SET(STDIN_FILENO, &rfds);
+		if (STDIN_FILENO > max_fd) max_fd = STDIN_FILENO;
+
+        if (tray_fd != -1) {
+			FD_SET(tray_fd, &rfds);
+			if (tray_fd > max_fd) max_fd = tray_fd;
+		}
 
 		wl_display_flush(display);
 
-		if (select(wl_fd + 1, &rfds, NULL, NULL, NULL) == -1) {
+		if (select(max_fd + 1, &rfds, NULL, NULL, NULL) == -1) {
 			if (errno == EINTR)
 				continue;
 			else
@@ -1221,9 +1360,13 @@ event_loop(void)
 			if (wl_display_dispatch(display) == -1)
 				break;
 		if (FD_ISSET(STDIN_FILENO, &rfds))
-			if (read_stdin() == -1)
+			if (read_fd(STDIN_FILENO) == -1)
 				break;
-		
+        if (tray_fd != -1 && FD_ISSET(tray_fd, &rfds)) {
+			if (read_fd(tray_fd) == -1) {
+                break;
+			}
+		}
 		Bar *bar;
 		wl_list_for_each(bar, &bar_list, link) {
 			if (bar->redraw) {
@@ -1247,6 +1390,7 @@ main(int argc, char **argv)
 {
 	Bar *bar, *bar2;
 	Seat *seat, *seat2;
+    bool systray_enabled = true;
 
 	/* Parse options */
 	for (int i = 1; i < argc; i++) {
@@ -1336,7 +1480,9 @@ main(int argc, char **argv)
 					EDIE("strdup");
 			tags_l = v;
 			i += v;
-		} else if (!strcmp(argv[i], "-v")) {
+		} else if (!strcmp(argv[i], "-no-systray")){
+            systray_enabled = false;
+        } else if (!strcmp(argv[i], "-v")) {
 			fprintf(stderr, PROGRAM " " VERSION "\n");
 			return 0;
 		} else if (!strcmp(argv[i], "-h")) {
@@ -1401,7 +1547,11 @@ main(int argc, char **argv)
 	signal(SIGHUP, sig_handler);
 	signal(SIGTERM, sig_handler);
 	signal(SIGCHLD, SIG_IGN);
-	
+
+    if (systray_enabled) {
+        tray_fd = start_systray(argv[0], bottom);
+    }
+
 	/* Run */
 	run_display = true;
 	event_loop();

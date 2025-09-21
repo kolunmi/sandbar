@@ -11,6 +11,9 @@ dwm-like bar for [river](https://github.com/riverwm/river).
 * libwayland-cursor
 * pixman
 * fcft
+* gtk4
+* gtk4-layer-shell
+
 
 ## Installation
 
