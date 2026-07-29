@@ -64,6 +64,9 @@
 	"	-urgent-bg-color [RGBA]			specify background color of urgent tags\n" \
 	"	-title-fg-color [RGBA]			specify text color of title bar\n" \
 	"	-title-bg-color [RGBA]			specify background color of title bar\n" \
+  "	-border-width [PIXELS]			specify border width\n" \
+	"	-border-color [RGBA]			specify border color\n" \
+  "        -show_window_icons                      specify wether or not to display tags icon\n" \
 	"Other\n"							\
 	"	-v					get version information\n" \
 	"	-h					view this help text\n"
@@ -81,7 +84,7 @@ typedef struct {
 	uint32_t width, height;
 	uint32_t textpadding;
 	uint32_t stride, bufsize;
-	
+  char *window_icon;  
 	uint32_t mtags, ctags, urg;
 	bool sel;
 	char *layout, *title, *status;
@@ -121,10 +124,12 @@ static struct wl_list bar_list, seat_list;
 
 static char **tags;
 static uint32_t tags_l;
+static bool show_window_icons = true;
 
 static char *fontstr = "monospace:size=16";
 static struct fcft_font *font;
 static uint32_t height, textpadding, vertical_padding = 1, buffer_scale = 1;
+static uint32_t border_width = 0;
 
 static bool hidden, bottom, hide_vacant, no_title, no_status_commands, no_mode, no_layout, hide_normal_mode;
 
@@ -136,13 +141,13 @@ static pixman_color_t urgent_fg_color = { .red = 0x2222, .green = 0x2222, .blue 
 static pixman_color_t urgent_bg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
 static pixman_color_t title_fg_color = { .red = 0xeeee, .green = 0xeeee, .blue = 0xeeee, .alpha = 0xffff, };
 static pixman_color_t title_bg_color = { .red = 0x0000, .green = 0x5555, .blue = 0x7777, .alpha = 0xffff, };
+static pixman_color_t border_color = { .red = 0x0000, .green = 0x3333, .blue = 0x5555, .alpha = 0xffff, };
 
 static bool run_display;
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
 {
-	/* Sent by the compositor when it's no longer using this buffer */
 	wl_buffer_destroy(wl_buffer);
 }
 
@@ -150,7 +155,6 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 	.release = wl_buffer_release,
 };
 
-/* Shared memory support function adapted from [wayland-book] */
 static int
 allocate_shm_file(size_t size)
 {
@@ -168,7 +172,6 @@ allocate_shm_file(size_t size)
 	return fd;
 }
 
-/* Color parsing logic adapted from [sway] */
 static int
 parse_color(const char *str, pixman_color_t *clr)
 {
@@ -176,7 +179,6 @@ parse_color(const char *str, pixman_color_t *clr)
 		str++;
 	int len = strlen(str);
 
-	// Disallows "0x" prefix that strtoul would ignore
 	if ((len != 6 && len != 8) || !isxdigit(str[0]) || !isxdigit(str[1]))
 		return -1;
 
@@ -231,11 +233,9 @@ draw_text(char *text,
 
 	uint32_t codepoint, state = UTF8_ACCEPT, last_cp = 0;
 	for (char *p = text; *p; p++) {
-		/* Check for inline ^ commands */
 		if (!no_status_commands && commands && state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				/* Parse color */
 				char *arg, *end;
 				if (!(arg = strchr(p, '(')) || !(end = strchr(arg + 1, ')')))
 					continue;
@@ -262,26 +262,18 @@ draw_text(char *text,
 						}
 					}
 				}
-
-				/* Restore string for later redraws */
 				*--arg = '(';
 				*end = ')';
 				p = end;
 				continue;
 			}
 		}
-
-		/* Returns nonzero if more bytes are needed */
 		if (utf8decode(&state, &codepoint, *p))
 			continue;
 
-		/* Turn off subpixel rendering, which complicates things when
-		 * mixed with alpha channels */
 		const struct fcft_glyph *glyph = fcft_rasterize_char_utf32(font, codepoint, FCFT_SUBPIXEL_NONE);
 		if (!glyph)
 			continue;
-
-		/* Adjust x position based on kerning with previous glyph */
 		long kern = 0;
 		if (last_cp)
 			fcft_kerning(font, last_cp, codepoint, &kern, NULL);
@@ -291,18 +283,11 @@ draw_text(char *text,
 		x += kern;
 
 		if (draw_fg) {
-			/* Detect and handle pre-rendered glyphs (e.g. emoji) */
 			if (pixman_image_get_format(glyph->pix) == PIXMAN_a8r8g8b8) {
-				/* Only the alpha channel of the mask is used, so we can
-				 * use fgfill here to blend prerendered glyphs with the
-				 * same opacity */
 				pixman_image_composite32(
 					PIXMAN_OP_OVER, glyph->pix, fg_fill, foreground, 0, 0, 0, 0,
 					x + glyph->x, y - glyph->y, glyph->width, glyph->height);
 			} else {
-				/* Applying the foreground color here would mess up
-				 * component alphas for subpixel-rendered text, so we
-				 * apply it when blending. */
 				pixman_image_composite32(
 					PIXMAN_OP_OVER, fg_fill, glyph->pix, foreground, 0, 0, 0, 0,
 					x + glyph->x, y - glyph->y, glyph->width, glyph->height);
@@ -316,8 +301,6 @@ draw_text(char *text,
 							.y1 = 0, .y2 = buf_height
 						});
 		}
-		
-		/* increment pen position */
 		x = nx;
 	}
 	
@@ -328,7 +311,6 @@ draw_text(char *text,
 	
 	nx = x + padding;
 	if (draw_bg) {
-		/* Fill padding background */
 		pixman_image_fill_boxes(PIXMAN_OP_OVER, background,
 					bg_color, 1, &(pixman_box32_t){
 						.x1 = ix, .x2 = ix + padding,
@@ -340,7 +322,6 @@ draw_text(char *text,
 						.y1 = 0, .y2 = buf_height
 					});
 	}
-	
 	return nx;
 }
 
@@ -350,8 +331,7 @@ draw_text(char *text,
 static int
 draw_frame(Bar *bar)
 {
-	/* Allocate buffer to be attached to the surface */
-        int fd = allocate_shm_file(bar->bufsize);
+  int fd = allocate_shm_file(bar->bufsize);
 	if (fd == -1)
 		return -1;
 
@@ -367,14 +347,11 @@ draw_frame(Bar *bar)
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	/* Pixman image corresponding to main buffer */
 	pixman_image_t *final = pixman_image_create_bits(PIXMAN_a8r8g8b8, bar->width, bar->height, data, bar->width * 4);
 	
-	/* Text background and foreground layers */
 	pixman_image_t *foreground = pixman_image_create_bits(PIXMAN_a8r8g8b8, bar->width, bar->height, NULL, bar->width * 4);
 	pixman_image_t *background = pixman_image_create_bits(PIXMAN_a8r8g8b8, bar->width, bar->height, NULL, bar->width * 4);
 	
-	/* Draw on images */
 	uint32_t x = 0;
 	uint32_t y = (bar->height + font->ascent - font->descent) / 2;
 	uint32_t boxs = font->height / 9;
@@ -391,25 +368,47 @@ draw_frame(Bar *bar)
 		pixman_color_t *fg_color = urgent ? &urgent_fg_color : (active ? &active_fg_color : &inactive_fg_color);
 		pixman_color_t *bg_color = urgent ? &urgent_bg_color : (active ? &active_bg_color : &inactive_bg_color);
 		
-		if (!hide_vacant && occupied) {
-			pixman_image_fill_boxes(PIXMAN_OP_SRC, foreground,
-						fg_color, 1, &(pixman_box32_t){
-							.x1 = x + boxs, .x2 = x + boxs + boxw,
-							.y1 = boxs, .y2 = boxs + boxw
-						});
-			if ((!bar->sel || !active) && boxw >= 3) {
-				/* Make box hollow */
+		if (show_window_icons && active && bar->window_icon) {
+			if (!hide_vacant && occupied) {
 				pixman_image_fill_boxes(PIXMAN_OP_SRC, foreground,
-							&(pixman_color_t){ 0 },
-							1, &(pixman_box32_t){
-								.x1 = x + boxs + 1, .x2 = x + boxs + boxw - 1,
-								.y1 = boxs + 1, .y2 = boxs + boxw - 1
+							fg_color, 1, &(pixman_box32_t){
+								.x1 = x + boxs, .x2 = x + boxs + boxw,
+								.y1 = boxs, .y2 = boxs + boxw
 							});
+				if ((!bar->sel || !active) && boxw >= 3) {
+					pixman_image_fill_boxes(PIXMAN_OP_SRC, foreground,
+								&(pixman_color_t){ 0 },
+								1, &(pixman_box32_t){
+									.x1 = x + boxs + 1, .x2 = x + boxs + boxw - 1,
+									.y1 = boxs + 1, .y2 = boxs + boxw - 1
+								});
+				}
 			}
+			
+			x = draw_text(bar->window_icon, x, y, foreground, background,
+				      fg_color, bg_color,  
+				      bar->width, bar->height, bar->textpadding,
+				      false);
+		} else {
+			if (!hide_vacant && occupied) {
+				pixman_image_fill_boxes(PIXMAN_OP_SRC, foreground,
+							fg_color, 1, &(pixman_box32_t){
+								.x1 = x + boxs, .x2 = x + boxs + boxw,
+								.y1 = boxs, .y2 = boxs + boxw
+							});
+				if ((!bar->sel || !active) && boxw >= 3) {
+					pixman_image_fill_boxes(PIXMAN_OP_SRC, foreground,
+								&(pixman_color_t){ 0 },
+								1, &(pixman_box32_t){
+									.x1 = x + boxs + 1, .x2 = x + boxs + boxw - 1,
+									.y1 = boxs + 1, .y2 = boxs + boxw - 1
+								});
+				}
+			}
+			
+			x = draw_text(tags[i], x, y, foreground, background, fg_color, bg_color,
+				      bar->width, bar->height, bar->textpadding, false);
 		}
-		
-		x = draw_text(tags[i], x, y, foreground, background, fg_color, bg_color,
-			      bar->width, bar->height, bar->textpadding, false);
 	}
 
 	if (!no_mode) {
@@ -443,7 +442,7 @@ draw_frame(Bar *bar)
 			      bar->width - status_width, bar->height, bar->textpadding,
 			      false);
 	}
-
+	 
 	pixman_image_fill_boxes(PIXMAN_OP_SRC, background,
 				bar->sel ? &title_bg_color : &title_bg_color, 1,
 				&(pixman_box32_t){
@@ -451,9 +450,17 @@ draw_frame(Bar *bar)
 					.y1 = 0, .y2 = bar->height
 				});
 
-	/* Draw background and foreground on bar */
 	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, final, 0, 0, 0, 0, 0, 0, bar->width, bar->height);
 	pixman_image_composite32(PIXMAN_OP_OVER, foreground, NULL, final, 0, 0, 0, 0, 0, 0, bar->width, bar->height);
+	if (border_width > 0) {
+		uint32_t bw = border_width * buffer_scale;
+		uint32_t y1 = bar->bottom ? 0 : bar->height - bw;
+		uint32_t y2 = bar->bottom ? bw : bar->height;
+    pixman_image_fill_boxes(PIXMAN_OP_SRC, final, &border_color, 1, &(pixman_box32_t){.x1 = 0, .x2 = bar->width, .y1 = bar->height-bw, .y2 = bar->height});
+	  pixman_image_fill_boxes(PIXMAN_OP_SRC, final, &border_color, 1, &(pixman_box32_t){.x1 = 0, .x2 = bar->width, .y1 = 0, .y2 = bw});
+		pixman_image_fill_boxes(PIXMAN_OP_SRC, final, &border_color, 1, &(pixman_box32_t){.x1 = 0, .x2 = bw, .y1 = 0, .y2 = bar->height});
+		pixman_image_fill_boxes(PIXMAN_OP_SRC, final, &border_color, 1, &(pixman_box32_t){.x1 = bar->width-bw, .x2 = bar->width, .y1 = 0, .y2 = bar->height});
+  }
 
 	pixman_image_unref(foreground);
 	pixman_image_unref(background);
@@ -469,7 +476,6 @@ draw_frame(Bar *bar)
 	return 0;
 }
 
-/* Layer-surface setup adapted from layer-shell example in [wlroots] */
 static void
 layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface,
 			uint32_t serial, uint32_t w, uint32_t h)
@@ -577,7 +583,6 @@ pointer_frame(void *data, struct wl_pointer *pointer)
 		x += TEXT_WIDTH(tags[i], seat->bar->width - x, seat->bar->textpadding, false) / buffer_scale;
 	} while (seat->pointer_x >= x && ++i < tags_l);
 	if (i < tags_l) {
-		/* Clicked on tags */
 		char *cmd;
 		if (button == BTN_LEFT)
 			cmd = "set-focused-tags";
@@ -614,22 +619,16 @@ pointer_frame(void *data, struct wl_pointer *pointer)
 			return;
 		}
 	}
-
-	// TODO: run custom commands upon clicking layout, title, status
 	if (seat->bar->mtags & seat->bar->ctags) {
 		x += TEXT_WIDTH(seat->bar->layout, seat->bar->width - x, seat->bar->textpadding, false) / buffer_scale;
 		if (seat->pointer_x < x) {
-			/* clicked on layout */
 			return;
 		}
 	}
 	
 	if (seat->pointer_x < seat->bar->width / buffer_scale - TEXT_WIDTH(seat->bar->status, seat->bar->width - x, seat->bar->textpadding, true) / buffer_scale) {
-		/* clicked on title */
 		return;
 	}
-	
-	/* clicked on status */
 }
 
 static void
@@ -851,22 +850,68 @@ river_seat_status_unfocused_output(void *data, struct zriver_seat_status_v1 *sea
 	}
 }
 
+static const char*
+get_window_icon(const char *title) {
+    if (!title || !*title)
+        return NULL;
+    if (strstr(title, "Chromium"))
+        return " ";  
+    else if (strstr(title, "kitty") || strstr(title, "~") || strstr(title, "herdr"))
+        return " ";  
+    else if (strstr(title, "nan") || strstr(title, "nvim"))
+        return " "; 
+    else if (strstr(title, "app.main") || strstr(title, "splash"))
+        return " ";  
+    else if (strstr(title, "Yazi") || strstr(title, "yz"))
+        return " "; 
+    else if (strstr(title, "btop"))
+        return "󱎴 "; 
+    else if (!strcmp(title,"f"))
+        return " ";
+    else if (strstr(title,"yayf"))
+        return " ";
+    else if (strstr(title,"yayr"))
+        return " ";
+    else if (strstr(title,"VMware Workstation"))
+        return "󰢔 ";
+    else if (strstr(title,".java") || strstr(title,".xml"))
+        return "";
+
+
+    else
+        return " ";  
+}
+
 static void
 river_seat_status_focused_view(void *data, struct zriver_seat_status_v1 *seat_status,
-			       const char *title)
+                               const char *title)
 {
-	if (no_title)
-		return;
-	
-	Seat *seat = (Seat *)data;
+    if (no_title)
+        return;
+    
+    Seat *seat = (Seat *)data;
 
-	if (!seat->bar)
-		return;
-	if (seat->bar->title)
-		free(seat->bar->title);
-	if (!(seat->bar->title = strdup(title)))
-		EDIE("strdup");
-	seat->bar->redraw = true;
+    if (!seat->bar)
+        return;
+    if (seat->bar->title)
+        free(seat->bar->title);
+    if (!(seat->bar->title = strdup(title)))
+        EDIE("strdup");
+        
+    // Set window icon based on title
+    if (show_window_icons) {
+        if (seat->bar->window_icon)
+            free(seat->bar->window_icon);
+        const char *icon = get_window_icon(title);
+        if (icon) {
+            if (!(seat->bar->window_icon = strdup(icon)))
+                EDIE("strdup");
+        } else {
+            seat->bar->window_icon = NULL;
+        }
+    }
+    
+    seat->bar->redraw = true;
 }
 
 static void
@@ -1004,6 +1049,8 @@ teardown_bar(Bar *bar)
 		free(bar->status);
 	if (bar->output_name)
 		free(bar->output_name);
+   if (bar->window_icon)  
+        free(bar->window_icon);  
 	zriver_output_status_v1_destroy(bar->river_output_status);
 	if (!bar->hidden) {
 		zwlr_layer_surface_v1_destroy(bar->layer_surface);
@@ -1024,6 +1071,8 @@ teardown_seat(Seat *seat)
 	wl_seat_destroy(seat->wl_seat);
 	free(seat);
 }
+
+
 
 static void
 handle_global_remove(void *data, struct wl_registry *registry, uint32_t name)
@@ -1256,7 +1305,9 @@ main(int argc, char **argv)
 			bottom = true;
 		} else if (!strcmp(argv[i], "-hidden")) {
 			hidden = true;
-		} else if (!strcmp(argv[i], "-no-title")) {
+		} else if (!strcmp(argv[i], "-no-window-icons")) {
+      show_window_icons = false; 
+    } else if (!strcmp(argv[i], "-no-title")) {
 			no_title = true;
 		} else if (!strcmp(argv[i], "-no-status-commands")) {
 			no_status_commands = true;
@@ -1308,7 +1359,16 @@ main(int argc, char **argv)
 				DIE("Option -urgent-bg-color requires an argument");
 			if (parse_color(argv[i], &urgent_bg_color) == -1)
 				DIE("malformed color string");
-		} else if (!strcmp(argv[i], "-title-fg-color")) {
+		} else if (!strcmp(argv[i], "-border-width")) {
+			if (++i >= argc)
+				DIE("Option -border-width requires an argument");
+			border_width = MAX(MIN(atoi(argv[i]), 100), 0);
+		} else if (!strcmp(argv[i], "-border-color")) {
+			if (++i >= argc)
+				DIE("Option -border-color requires an argument");
+			if (parse_color(argv[i], &border_color) == -1)
+				DIE("malformed color string");
+    } else if (!strcmp(argv[i], "-title-fg-color")) {
 			if (++i >= argc)
 				DIE("Option -title-fg-color requires an argument");
 			if (parse_color(argv[i], &title_fg_color) == -1)
@@ -1347,7 +1407,6 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* Set up display and protocols */
 	if (!(display = wl_display_connect(NULL)))
 		DIE("Failed to create display");
 
@@ -1360,7 +1419,6 @@ main(int argc, char **argv)
 	if (!compositor || !shm || !layer_shell || !river_status_manager || !river_control)
 		DIE("Compositor does not support all needed protocols");
 
-	/* Load selected font */
 	fcft_init(FCFT_LOG_COLORIZE_AUTO, 0, FCFT_LOG_CLASS_ERROR);
 	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
 
@@ -1372,7 +1430,6 @@ main(int argc, char **argv)
 	textpadding = font->height / 2;
 	height = font->height / buffer_scale + vertical_padding * 2;
 
-	/* Configure tag names */
 	if (!tags) {
 		tags_l = 9;
 		if (!(tags = malloc(tags_l * sizeof(char *))))
@@ -1385,28 +1442,21 @@ main(int argc, char **argv)
 		}
 	}
 	
-	/* Setup bars and seats */
 	wl_list_for_each(bar, &bar_list, link)
 		setup_bar(bar);
 	wl_list_for_each(seat, &seat_list, link)
 		setup_seat(seat);
 	wl_display_roundtrip(display);
 
-	/* Configure stdin */
 	if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK) == -1)
 		EDIE("fcntl");
 
-	/* Set up signals */
 	signal(SIGINT, sig_handler);
 	signal(SIGHUP, sig_handler);
 	signal(SIGTERM, sig_handler);
 	signal(SIGCHLD, SIG_IGN);
-	
-	/* Run */
 	run_display = true;
 	event_loop();
-
-	/* Clean everything up */
 	if (tags) {
 		for (uint32_t i = 0; i < tags_l; i++)
 			free(tags[i]);
